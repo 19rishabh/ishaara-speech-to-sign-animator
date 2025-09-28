@@ -1,88 +1,111 @@
 import spacy
 from flask import Flask, request, jsonify
 from flask_cors import CORS
+from faster_whisper import WhisperModel
+import os
 
+# --- SETUP ---
 # Initialize Flask app
 app = Flask(__name__)
-# Enable CORS to allow browser to communicate with the server
 CORS(app)
 
-# Load the small English model for spaCy
-# This model is loaded once when the application starts
+# Initialize AI Models (loaded once at startup)
+# 1. spaCy for NLP translation
+nlp = None
 try:
     nlp = spacy.load("en_core_web_sm")
     print("spaCy model loaded successfully.")
 except OSError:
     print("spaCy model not found. Please run 'python -m spacy download en_core_web_sm'")
-    nlp = None
 
+# 2. Whisper for Speech-to-Text
+#    Using "tiny.en" for speed. Other options: "base.en", "small.en"
+whisper_model = None
+try:
+    model_size = "tiny.en"
+    whisper_model = WhisperModel(model_size, device="cpu", compute_type="int8")
+    print(f"Whisper model '{model_size}' loaded successfully.")
+except Exception as e:
+    print(f"Error loading Whisper model: {e}")
+
+# Create a directory for temporary audio files
+if not os.path.exists("temp_audio"):
+    os.makedirs("temp_audio")
+    
+# --- NEW, MORE ROBUST TRANSLATION LOGIC ---
 def translate_to_isl_gloss(text: str) -> list:
     """
-    Translates a simple English sentence into an ISL gloss sequence.
-    This is a simplified rule-based approach for demonstration.
-    ISL generally follows a Subject-Object-Verb (SOV) structure.
-    
-    Args:
-        text: The input English sentence.
-
-    Returns:
-        A list of strings representing the ISL gloss.
+    Translates an English sentence into an ISL gloss sequence by extracting key content words.
+    This approach is more robust for a wider variety of sentence structures.
     """
     if not nlp:
         return ["Error: spaCy model not loaded."]
         
     doc = nlp(text.strip().lower())
     
-    subject = ""
-    direct_object = ""
-    root_verb = ""
-
-    # Find the root verb and its direct dependencies
+    gloss = []
+    
+    # Define parts of speech that carry the most meaning
+    # NOUN, PROPN (proper noun), VERB, ADJ (adjective), INTJ (interjection)
+    important_pos = ["NOUN", "PROPN", "VERB", "ADJ", "INTJ"]
+    
     for token in doc:
-        if token.dep_ == "ROOT":
-            root_verb = token.lemma_  # Use lemma for the base form of the verb
-            for child in token.children:
-                # nsubj is the nominal subject
-                if child.dep_ == "nsubj":
-                    subject = child.text
-                # dobj is the direct object, intj is an interjection
-                if child.dep_ in ("dobj", "intj"):
-                    direct_object = child.text
+        # We add the token's base form (lemma) if it's an important POS
+        # and not a "stop word" (common words like 'the', 'is', 'a').
+        # We make an exception for pronouns, which are stop words but important for context.
+        if token.pos_ in important_pos and (not token.is_stop or token.pos_ == 'PRON'):
+            # Special case: for "be" verbs, we can often ignore them in ISL gloss
+            if token.lemma_ != "be":
+                gloss.append(token.lemma_.upper())
 
-    # Basic check to handle sentences that don't fit the simple S-O-V pattern
-    if not root_verb:
-        return [word.text.upper() for word in doc] # Fallback to word-by-word
+    # If the new logic fails to find anything, fallback to the original text
+    if not gloss:
+        return [word.text.upper() for word in doc if not word.is_punct]
 
-    # Construct the gloss in SOV order, filtering out empty strings
-    gloss = [
-        subject.upper(),
-        direct_object.upper(),
-        root_verb.upper()
-    ]
-    
-    return [word for word in gloss if word]
+    return gloss
 
-@app.route('/translate', methods=['POST'])
-def translate():
+# --- API ENDPOINTS ---
+@app.route('/transcribe', methods=['POST'])
+def transcribe_audio():
     """
-    API endpoint to handle translation requests.
-    Expects a JSON payload with a "text" key.
+    API endpoint to handle audio transcription and translation.
+    Expects audio file data.
     """
-    data = request.get_json()
-    if not data or 'text' not in data:
-        return jsonify({"error": "Invalid request. 'text' key is required."}), 400
+    if 'audio_data' not in request.files:
+        return jsonify({"error": "No audio file part"}), 400
     
-    english_text = data['text']
-    isl_gloss = translate_to_isl_gloss(english_text)
+    audio_file = request.files['audio_data']
     
-    return jsonify({"gloss": isl_gloss})
+    if audio_file.filename == '':
+        return jsonify({"error": "No selected file"}), 400
 
+    try:
+        # Save the audio file temporarily
+        temp_path = os.path.join("temp_audio", "temp_recording.webm")
+        audio_file.save(temp_path)
 
-# --- To run this Flask server ---
-# 1. Make sure your venv is active.
-# 2. In your terminal, run the command: flask run
-# 3. The server will start, typically on http://127.0.0.1:5000
+        # Transcribe audio to text using Whisper
+        if not whisper_model:
+            return jsonify({"error": "Whisper model not loaded"}), 500
+            
+        segments, _ = whisper_model.transcribe(temp_path, beam_size=5)
+        transcribed_text = "".join(segment.text for segment in segments).strip()
+        
+        if not transcribed_text:
+             return jsonify({"transcribed_text": "", "gloss": []})
+
+        # Translate the transcribed text to ISL gloss
+        isl_gloss = translate_to_isl_gloss(transcribed_text)
+        
+        # Clean up the temporary file
+        os.remove(temp_path)
+        
+        return jsonify({"transcribed_text": transcribed_text, "gloss": isl_gloss})
+
+    except Exception as e:
+        print(f"An error occurred: {e}")
+        return jsonify({"error": str(e)}), 500
+
 if __name__ == '__main__':
-    # This allows you to run the app with `python app.py` as well
     app.run(debug=True)
 

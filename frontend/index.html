@@ -15,51 +15,52 @@
             display: flex;
             flex-direction: column;
             align-items: center;
-            gap: 10px;
+            gap: 15px;
         }
-        .input-group {
-            background-color: white;
+        #mic-btn {
             padding: 15px;
-            border-radius: 12px;
-            box-shadow: 0 4px 10px rgba(0,0,0,0.1);
-            display: flex;
-            gap: 10px;
-            align-items: center;
-        }
-        input[type="text"] {
-            padding: 10px;
-            border: 1px solid #ccc;
-            border-radius: 8px;
-            font-size: 16px;
-            width: 300px;
-        }
-        button {
-            padding: 10px 20px;
-            font-size: 16px;
+            font-size: 18px;
             cursor: pointer;
             border: none;
-            border-radius: 8px;
-            background-color: #007bff;
+            border-radius: 50%; /* Make it circular */
+            width: 80px;
+            height: 80px;
+            background-color: #28a745; /* Green for start */
             color: white;
-            transition: background-color 0.3s;
+            transition: background-color 0.3s, transform 0.2s;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.15);
         }
-        button:hover {
-            background-color: #0056b3;
+        #mic-btn:hover {
+            transform: scale(1.05);
+        }
+        #mic-btn.recording {
+            background-color: #dc3545; /* Red for stop */
+        }
+        #status-container {
+            background-color: rgba(255, 255, 255, 0.8);
+            padding: 10px 20px;
+            border-radius: 12px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
         }
         #status {
-            margin-top: 10px;
-            font-style: italic;
-            color: #555;
+            font-size: 16px;
+            color: #333;
+        }
+         #transcription {
+            font-size: 18px;
+            font-weight: bold;
+            color: #007bff;
+            min-height: 25px;
         }
     </style>
 </head>
 <body>
     <div id="ui-container">
-        <div class="input-group">
-            <input type="text" id="text-input" placeholder="Enter an English sentence...">
-            <button id="translate-btn">Translate & Animate</button>
+        <div id="status-container">
+             <div id="transcription">&nbsp;</div>
+             <div id="status">Click the microphone to start speaking.</div>
         </div>
-        <div id="status">Enter a sentence and click Translate.</div>
+        <button id="mic-btn">Speak</button>
     </div>
 
     <!-- Import Three.js and the GLTF Loader -->

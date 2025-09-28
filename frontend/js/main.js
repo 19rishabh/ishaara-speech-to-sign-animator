@@ -3,14 +3,19 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
 let scene, camera, renderer, model, mixer, clock;
-const animationActions = {};
-let animationQueue = []; // A queue to hold the sequence of animations to play
+const animationActions = {}; // This will act as our cache for loaded animations
+let animationQueue = [];
 let isPlayingAnimation = false;
+
+// --- Audio Recording Variables ---
+let mediaRecorder;
+let audioChunks = [];
+let isRecording = false;
 
 // --- DOM ELEMENTS ---
 const statusElement = document.getElementById('status');
-const textInput = document.getElementById('text-input');
-const translateBtn = document.getElementById('translate-btn');
+const transcriptionElement = document.getElementById('transcription');
+const micBtn = document.getElementById('mic-btn');
 
 init();
 
@@ -19,25 +24,17 @@ function init() {
     scene = new THREE.Scene();
     scene.background = new THREE.Color(0xeeeeee);
     clock = new THREE.Clock();
-
-    // --- Camera ---
     camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
     camera.position.set(0, 1.5, 3);
-
-    // --- Renderer ---
     renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.setPixelRatio(window.devicePixelRatio);
     document.body.appendChild(renderer.domElement);
-
-    // --- Lighting ---
     const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
     scene.add(ambientLight);
     const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
     directionalLight.position.set(5, 10, 7.5);
     scene.add(directionalLight);
-
-    // --- Controls ---
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.target.set(0, 1, 0);
     controls.update();
@@ -46,28 +43,19 @@ function init() {
     const loader = new GLTFLoader();
     loader.load('assets/avatar.glb', (gltf) => {
         model = gltf.scene;
-        model.position.set(0, 0, 0);
         scene.add(model);
-        
-        // Setup the animation mixer
         mixer = new THREE.AnimationMixer(model);
-        
-        // --- PRE-LOAD ANIMATIONS ---
-        // For a real project, you would load all animations you have.
-        // The key of the object (e.g., 'HELLO') should match the gloss word.
-        loadAnimation('HELLO', 'assets/hello.glb');
-        // TODO: Add more loadAnimation calls for each .glb file you create
-        // loadAnimation('I', 'assets/i.glb');
-        // loadAnimation('NAME', 'assets/name.glb');
-
-        statusElement.textContent = "Ready. Enter a sentence.";
+        // We no longer pre-load the entire dictionary.
+        statusElement.textContent = "Click the microphone to start speaking.";
+    }, undefined, (error) => {
+        console.error("Error loading main avatar:", error);
+        statusElement.textContent = "Error: Could not load the main avatar model.";
     });
 
     // --- Event Listeners ---
     window.addEventListener('resize', onWindowResize);
-    translateBtn.addEventListener('click', onTranslateClick);
+    micBtn.addEventListener('click', toggleRecording);
 
-    // Start the animation loop
     animate();
 }
 
@@ -77,109 +65,163 @@ function onWindowResize() {
     renderer.setSize(window.innerWidth, window.innerHeight);
 }
 
-function loadAnimation(name, path) {
-    const loader = new GLTFLoader();
-    loader.load(path, (gltf) => {
-        if (gltf.animations && gltf.animations.length) {
-            const action = mixer.clipAction(gltf.animations[0]);
-            action.setLoop(THREE.LoopOnce);
-            action.clampWhenFinished = true;
-            animationActions[name.toUpperCase()] = action; // Use uppercase to match gloss
-            console.log(`Animation '${name}' loaded successfully.`);
-        } else {
-            console.error(`Error: The file at ${path} does not contain any animations.`);
-        }
-    }, undefined, (error) => {
-        console.error(`An error happened loading animation: ${name}`, error);
-    });
-}
-
 function animate() {
     requestAnimationFrame(animate);
     const delta = clock.getDelta();
-    if (mixer) {
-        mixer.update(delta);
-    }
+    if (mixer) mixer.update(delta);
     renderer.render(scene, camera);
 }
 
-// --- NEW: Handle Translation Request ---
-async function onTranslateClick() {
-    const text = textInput.value;
-    if (!text) {
-        statusElement.textContent = "Please enter some text.";
-        return;
-    }
+// --- NEW: On-Demand Animation Loader ---
+function getAnimationAction(name) {
+    return new Promise((resolve, reject) => {
+        // 1. Check if the animation is already cached
+        if (animationActions[name]) {
+            resolve(animationActions[name]);
+            return;
+        }
 
-    statusElement.textContent = "Translating...";
-    
-    try {
-        // Send the text to our Flask backend
-        const response = await fetch('http://127.0.0.1:5000/translate', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ text: text }),
+        // 2. If not cached, load it from the server
+        const path = `assets/${name}.glb`;
+        const loader = new GLTFLoader();
+
+        loader.load(path, (gltf) => {
+            if (gltf.animations && gltf.animations.length) {
+                const action = mixer.clipAction(gltf.animations[0]);
+                action.setLoop(THREE.LoopOnce);
+                action.clampWhenFinished = true;
+                
+                // 3. Cache the loaded animation
+                animationActions[name] = action;
+                console.log(`Successfully loaded and cached animation: ${name}`);
+                resolve(action);
+            } else {
+                reject(`No animation found in ${path}`);
+            }
+        }, undefined, (error) => {
+            console.error(`Failed to load animation ${name}:`, error);
+            reject(error);
         });
+    });
+}
 
-        if (!response.ok) {
-            throw new Error(`Server error: ${response.statusText}`);
+// --- Audio Recording and Processing Logic ---
+async function toggleRecording() {
+    if (isPlayingAnimation) return;
+
+    if (isRecording) {
+        mediaRecorder.stop();
+        isRecording = false;
+        micBtn.textContent = "Speak";
+        micBtn.classList.remove('recording');
+        statusElement.textContent = "Processing audio...";
+    } else {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            alert('Your browser does not support audio recording.');
+            return;
         }
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            mediaRecorder = new MediaRecorder(stream);
+            audioChunks = [];
 
-        const data = await response.json();
-        const glossSequence = data.gloss;
-        
-        if (glossSequence && glossSequence.length > 0) {
-            statusElement.textContent = `Playing sequence: ${glossSequence.join(' -> ')}`;
-            playAnimationSequence(glossSequence);
-        } else {
-            statusElement.textContent = "Could not translate the text.";
+            mediaRecorder.ondataavailable = event => audioChunks.push(event.data);
+            mediaRecorder.onstop = sendAudioToServer;
+
+            mediaRecorder.start();
+            isRecording = true;
+            micBtn.textContent = "Stop";
+            micBtn.classList.add('recording');
+            statusElement.textContent = "Listening...";
+            transcriptionElement.innerHTML = "&nbsp;";
+        } catch (err) {
+            console.error("Error accessing microphone:", err);
+            statusElement.textContent = "Could not access microphone.";
         }
-
-    } catch (error) {
-        console.error('Translation failed:', error);
-        statusElement.textContent = "Failed to connect to the translation server.";
     }
 }
 
-// --- NEW: Animation Sequencer ---
-function playAnimationSequence(sequence) {
-    animationQueue = [...sequence]; // Copy the sequence to our queue
-    
-    // If an animation is not already playing, start the sequence
-    if (!isPlayingAnimation) {
-        playNextAnimationInQueue();
+async function sendAudioToServer() {
+    const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+    const formData = new FormData();
+    formData.append('audio_data', audioBlob, 'recording.webm');
+
+    try {
+        const response = await fetch('http://127.0.0.1:5000/transcribe', {
+            method: 'POST',
+            body: formData,
+        });
+
+        if (!response.ok) throw new Error(`Server error: ${response.statusText}`);
+
+        const data = await response.json();
+        
+        transcriptionElement.textContent = `You said: "${data.transcribed_text}"`;
+        
+        if (data.gloss && data.gloss.length > 0) {
+            playAnimationSequence(data.gloss);
+        } else {
+            statusElement.textContent = "Could not translate the speech. Try again.";
+        }
+
+    } catch (error) {
+        console.error('Transcription/Translation failed:', error);
+        statusElement.textContent = "Failed to process audio.";
     }
+}
+
+// --- NEW: More Resilient Animation Sequencer ---
+async function playAnimationSequence(sequence) {
+    if (isPlayingAnimation) return;
+
+    statusElement.textContent = "Loading required signs...";
+    
+    // Create a list of promises for the animations to load
+    const animationsToLoad = sequence.map(name => getAnimationAction(name));
+
+    // Use Promise.allSettled to wait for all load attempts, even if some fail.
+    const results = await Promise.allSettled(animationsToLoad);
+
+    // Log any animations that failed to load for debugging purposes
+    results.forEach((result, index) => {
+        if (result.status === 'rejected') {
+            console.warn(`Could not load animation for "${sequence[index]}". It will be skipped.`);
+        }
+    });
+    
+    statusElement.textContent = `Playing sequence: ${sequence.join(' -> ')}`;
+
+    // Now that we've attempted to load everything, start the playback.
+    // The playNext function will automatically skip any animations that failed to load.
+    animationQueue = [...sequence];
+    playNextAnimationInQueue();
 }
 
 function playNextAnimationInQueue() {
     if (animationQueue.length === 0) {
         isPlayingAnimation = false;
-        statusElement.textContent = "Sequence finished. Ready for next input.";
+        statusElement.textContent = "Sequence finished. Click the microphone to speak again.";
         return;
     }
 
     isPlayingAnimation = true;
-    const nextAnimationName = animationQueue.shift(); // Get the next animation name
-    const action = animationActions[nextAnimationName];
+    const nextAnimationName = animationQueue.shift();
+    const action = animationActions[nextAnimationName]; // Will be undefined if it failed to load
 
     if (action) {
-        // Reset and play the action
         action.reset().play();
-        
-        // Listen for when the animation finishes
-        const onAnimationFinish = (event) => {
+        const onAnimationFinish = event => {
             if (event.action === action) {
                 mixer.removeEventListener('finished', onAnimationFinish);
-                playNextAnimationInQueue(); // Play the next one
+                playNextAnimationInQueue();
             }
         };
         mixer.addEventListener('finished', onAnimationFinish);
-
     } else {
-        console.warn(`Animation not found for: ${nextAnimationName}. Skipping.`);
-        playNextAnimationInQueue(); // Skip to the next one
+        // If the action was not found in our cache, it means it failed to load.
+        // We simply skip it and move to the next one in the queue.
+        console.warn(`Animation was not found in cache for: ${nextAnimationName}. Skipping.`);
+        playNextAnimationInQueue();
     }
 }
 

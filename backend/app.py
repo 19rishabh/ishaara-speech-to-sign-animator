@@ -1,4 +1,11 @@
 import spacy
+from flask import Flask, request, jsonify
+from flask_cors import CORS
+
+# Initialize Flask app
+app = Flask(__name__)
+# Enable CORS to allow browser to communicate with the server
+CORS(app)
 
 # Load the small English model for spaCy
 # This model is loaded once when the application starts
@@ -38,8 +45,8 @@ def translate_to_isl_gloss(text: str) -> list:
                 # nsubj is the nominal subject
                 if child.dep_ == "nsubj":
                     subject = child.text
-                # dobj is the direct object
-                if child.dep_ == "dobj":
+                # dobj is the direct object, intj is an interjection
+                if child.dep_ in ("dobj", "intj"):
                     direct_object = child.text
 
     # Basic check to handle sentences that don't fit the simple S-O-V pattern
@@ -55,29 +62,27 @@ def translate_to_isl_gloss(text: str) -> list:
     
     return [word for word in gloss if word]
 
+@app.route('/translate', methods=['POST'])
+def translate():
+    """
+    API endpoint to handle translation requests.
+    Expects a JSON payload with a "text" key.
+    """
+    data = request.get_json()
+    if not data or 'text' not in data:
+        return jsonify({"error": "Invalid request. 'text' key is required."}), 400
+    
+    english_text = data['text']
+    isl_gloss = translate_to_isl_gloss(english_text)
+    
+    return jsonify({"gloss": isl_gloss})
 
-# --- This block allows us to test the translator directly ---
+
+# --- To run this Flask server ---
+# 1. Make sure your venv is active.
+# 2. In your terminal, run the command: flask run
+# 3. The server will start, typically on http://127.0.0.1:5000
 if __name__ == '__main__':
-    print("-" * 30)
-    print("Translator Test Block")
-    print("-" * 30)
-    
-    test_sentence_1 = "The boy is eating an apple"
-    test_sentence_2 = "I love programming"
-    test_sentence_3 = "She reads a book"
+    # This allows you to run the app with `python app.py` as well
+    app.run(debug=True)
 
-    gloss_1 = translate_to_isl_gloss(test_sentence_1)
-    gloss_2 = translate_to_isl_gloss(test_sentence_2)
-    gloss_3 = translate_to_isl_gloss(test_sentence_3)
-    
-    print(f"English: '{test_sentence_1}'")
-    print(f"ISL Gloss: {gloss_1}")
-    print("-" * 30)
-
-    print(f"English: '{test_sentence_2}'")
-    print(f"ISL Gloss: {gloss_2}")
-    print("-" * 30)
-    
-    print(f"English: '{test_sentence_3}'")
-    print(f"ISL Gloss: {gloss_3}")
-    print("-" * 30)

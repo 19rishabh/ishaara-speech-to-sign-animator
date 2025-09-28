@@ -1,116 +1,185 @@
-// Import necessary modules from the Three.js library
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
-// --- Core Three.js Components ---
-let scene, camera, renderer, clock, mixer;
-let model; // This will hold our loaded avatar
-const animationActions = {}; // An object to store our animations
+let scene, camera, renderer, model, mixer, clock;
+const animationActions = {};
+let animationQueue = []; // A queue to hold the sequence of animations to play
+let isPlayingAnimation = false;
 
-// --- Initialization ---
+// --- DOM ELEMENTS ---
+const statusElement = document.getElementById('status');
+const textInput = document.getElementById('text-input');
+const translateBtn = document.getElementById('translate-btn');
+
 init();
 
 function init() {
-    // 1. Scene: The container for all our 3D objects
+    // --- Basic Scene Setup ---
     scene = new THREE.Scene();
     scene.background = new THREE.Color(0xeeeeee);
-
-    // 2. Clock: Essential for animation updates
     clock = new THREE.Clock();
 
-    // 3. Renderer: Draws the scene onto the canvas
-    const canvas = document.getElementById('avatar-canvas');
-    renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true });
+    // --- Camera ---
+    camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+    camera.position.set(0, 1.5, 3);
+
+    // --- Renderer ---
+    renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.setPixelRatio(window.devicePixelRatio);
-    renderer.shadowMap.enabled = true; // Enable shadows
+    document.body.appendChild(renderer.domElement);
 
-    // 4. Camera: Our viewpoint into the scene
-    camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
-    camera.position.set(0, 1.5, 3); // Position the camera
-
-    // 5. Lighting: To make the model visible
+    // --- Lighting ---
     const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
     scene.add(ambientLight);
-
     const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
     directionalLight.position.set(5, 10, 7.5);
-    directionalLight.castShadow = true;
     scene.add(directionalLight);
 
-    // 6. Controls: To let the user interact with the scene
+    // --- Controls ---
     const controls = new OrbitControls(camera, renderer.domElement);
-    controls.target.set(0, 1, 0); // Set the point to orbit around
+    controls.target.set(0, 1, 0);
     controls.update();
 
-    // --- Load Models & Animations ---
+    // --- Load Main Avatar ---
     const loader = new GLTFLoader();
-
-    // Load the main avatar model
     loader.load('assets/avatar.glb', (gltf) => {
         model = gltf.scene;
-        model.position.y = 0; // Position model at the base
+        model.position.set(0, 0, 0);
         scene.add(model);
         
         // Setup the animation mixer
         mixer = new THREE.AnimationMixer(model);
+        
+        // --- PRE-LOAD ANIMATIONS ---
+        // For a real project, you would load all animations you have.
+        // The key of the object (e.g., 'HELLO') should match the gloss word.
+        loadAnimation('HELLO', 'assets/hello.glb');
+        // TODO: Add more loadAnimation calls for each .glb file you create
+        // loadAnimation('I', 'assets/i.glb');
+        // loadAnimation('NAME', 'assets/name.glb');
 
-        // Load our test animation
-        loadAnimation('hello', 'assets/hello.glb');
-
-        // Start the animation loop once the model is loaded
-        animate(); 
-    }, undefined, (error) => {
-        console.error('An error happened while loading the model:', error);
+        statusElement.textContent = "Ready. Enter a sentence.";
     });
 
     // --- Event Listeners ---
-    document.getElementById('hello-btn').addEventListener('click', () => playAnimation('hello'));
     window.addEventListener('resize', onWindowResize);
+    translateBtn.addEventListener('click', onTranslateClick);
+
+    // Start the animation loop
+    animate();
+}
+
+function onWindowResize() {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
 }
 
 function loadAnimation(name, path) {
     const loader = new GLTFLoader();
     loader.load(path, (gltf) => {
-        // Check if the loaded file actually contains animations
         if (gltf.animations && gltf.animations.length) {
             const action = mixer.clipAction(gltf.animations[0]);
-            action.setLoop(THREE.LoopOnce); // We don't want it to loop
-            action.clampWhenFinished = true; // Stay on the last frame
-            animationActions[name] = action;
+            action.setLoop(THREE.LoopOnce);
+            action.clampWhenFinished = true;
+            animationActions[name.toUpperCase()] = action; // Use uppercase to match gloss
             console.log(`Animation '${name}' loaded successfully.`);
         } else {
-            // Log a more helpful error if no animations are found
-            console.error(`Error: The file at ${path} does not contain any animations. Check your Blender export settings.`);
+            console.error(`Error: The file at ${path} does not contain any animations.`);
         }
+    }, undefined, (error) => {
+        console.error(`An error happened loading animation: ${name}`, error);
     });
 }
 
-function playAnimation(name) {
-    if (animationActions[name]) {
-        // Reset and play the requested animation
-        mixer.stopAllAction(); // Stop any other playing animations
-        animationActions[name].reset().play();
-    }
-}
-
-// --- Core Animation Loop ---
 function animate() {
     requestAnimationFrame(animate);
-
-    // Update the animation mixer
+    const delta = clock.getDelta();
     if (mixer) {
-        mixer.update(clock.getDelta());
+        mixer.update(delta);
     }
-
     renderer.render(scene, camera);
 }
 
-// --- Utility Functions ---
-function onWindowResize() {
-    camera.aspect = window.innerWidth / window.innerHeight;
-    camera.updateProjectionMatrix();
-    renderer.setSize(window.innerWidth, window.innerHeight);
+// --- NEW: Handle Translation Request ---
+async function onTranslateClick() {
+    const text = textInput.value;
+    if (!text) {
+        statusElement.textContent = "Please enter some text.";
+        return;
+    }
+
+    statusElement.textContent = "Translating...";
+    
+    try {
+        // Send the text to our Flask backend
+        const response = await fetch('http://127.0.0.1:5000/translate', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ text: text }),
+        });
+
+        if (!response.ok) {
+            throw new Error(`Server error: ${response.statusText}`);
+        }
+
+        const data = await response.json();
+        const glossSequence = data.gloss;
+        
+        if (glossSequence && glossSequence.length > 0) {
+            statusElement.textContent = `Playing sequence: ${glossSequence.join(' -> ')}`;
+            playAnimationSequence(glossSequence);
+        } else {
+            statusElement.textContent = "Could not translate the text.";
+        }
+
+    } catch (error) {
+        console.error('Translation failed:', error);
+        statusElement.textContent = "Failed to connect to the translation server.";
+    }
+}
+
+// --- NEW: Animation Sequencer ---
+function playAnimationSequence(sequence) {
+    animationQueue = [...sequence]; // Copy the sequence to our queue
+    
+    // If an animation is not already playing, start the sequence
+    if (!isPlayingAnimation) {
+        playNextAnimationInQueue();
+    }
+}
+
+function playNextAnimationInQueue() {
+    if (animationQueue.length === 0) {
+        isPlayingAnimation = false;
+        statusElement.textContent = "Sequence finished. Ready for next input.";
+        return;
+    }
+
+    isPlayingAnimation = true;
+    const nextAnimationName = animationQueue.shift(); // Get the next animation name
+    const action = animationActions[nextAnimationName];
+
+    if (action) {
+        // Reset and play the action
+        action.reset().play();
+        
+        // Listen for when the animation finishes
+        const onAnimationFinish = (event) => {
+            if (event.action === action) {
+                mixer.removeEventListener('finished', onAnimationFinish);
+                playNextAnimationInQueue(); // Play the next one
+            }
+        };
+        mixer.addEventListener('finished', onAnimationFinish);
+
+    } else {
+        console.warn(`Animation not found for: ${nextAnimationName}. Skipping.`);
+        playNextAnimationInQueue(); // Skip to the next one
+    }
 }
 

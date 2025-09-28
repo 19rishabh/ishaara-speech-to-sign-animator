@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ISL Avatar Generator</title>
+    <style>
+        body { margin: 0; background-color: #f0f0f0; }
+        canvas { display: block; }
+        #controls {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 10px;
+            background-color: rgba(0, 0, 0, 0.5);
+            border-radius: 10px;
+        }
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <!-- This canvas is where the 3D avatar will be rendered -->
+    <canvas id="avatar-canvas"></canvas>
+
+    <!-- Simple UI controls -->
+    <div id="controls">
+        <button id="hello-btn">Say Hello</button>
+    </div>
+
+    <!-- Import Three.js and our main script -->
+    <!-- We use type="module" to allow for 'import' statements in our JS file -->
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+    <script type="module" src="js/main.js"></script>
+</body>
+</html>

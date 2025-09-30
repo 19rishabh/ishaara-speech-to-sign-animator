@@ -19,7 +19,6 @@ except OSError:
     print("spaCy model not found. Please run 'python -m spacy download en_core_web_sm'")
 
 # 2. Whisper for Speech-to-Text
-#    Using "tiny.en" for speed. Other options: "base.en", "small.en"
 whisper_model = None
 try:
     model_size = "tiny.en"
@@ -32,11 +31,11 @@ except Exception as e:
 if not os.path.exists("temp_audio"):
     os.makedirs("temp_audio")
     
-# --- NEW, MORE ROBUST TRANSLATION LOGIC ---
+# --- REVISED, MORE ACCURATE TRANSLATION LOGIC ---
 def translate_to_isl_gloss(text: str) -> list:
     """
     Translates an English sentence into an ISL gloss sequence by extracting key content words.
-    This approach is more robust for a wider variety of sentence structures.
+    This version correctly handles important pronouns and adverbs.
     """
     if not nlp:
         return ["Error: spaCy model not loaded."]
@@ -45,23 +44,29 @@ def translate_to_isl_gloss(text: str) -> list:
     
     gloss = []
     
-    # Define parts of speech that carry the most meaning
-    # NOUN, PROPN (proper noun), VERB, ADJ (adjective), INTJ (interjection)
-    important_pos = ["NOUN", "PROPN", "VERB", "ADJ", "INTJ"]
+    # --- FIX: Added "ADV" (adverb) to the list of important parts of speech ---
+    # This will now capture words like "why", "where", "how", "home" etc.
+    important_pos = ["NOUN", "PROPN", "VERB", "ADJ", "INTJ", "PRON", "ADV"]
     
     for token in doc:
-        # We add the token's base form (lemma) if it's an important POS
-        # and not a "stop word" (common words like 'the', 'is', 'a').
-        # We make an exception for pronouns, which are stop words but important for context.
-        if token.pos_ in important_pos and (not token.is_stop or token.pos_ == 'PRON'):
-            # Special case: for "be" verbs, we can often ignore them in ISL gloss
-            if token.lemma_ != "be":
-                gloss.append(token.lemma_.upper())
+        # Check for negation separately
+        if token.dep_ == "neg":
+            gloss.append("NOT")
+            continue
 
-    # If the new logic fails to find anything, fallback to the original text
+        if token.pos_ in important_pos:
+            if token.lemma_ != "be":
+                # Special handling for "don't" which can be missed
+                if token.text == "dont":
+                    gloss.append("NOT")
+                else:
+                    gloss.append(token.lemma_.upper())
+
+    # If the logic fails to find anything, fallback to the original text
     if not gloss:
         return [word.text.upper() for word in doc if not word.is_punct]
 
+    # spaCy lemmatizes 'my' to 'I', which is what we want for the sign animation.
     return gloss
 
 # --- API ENDPOINTS ---

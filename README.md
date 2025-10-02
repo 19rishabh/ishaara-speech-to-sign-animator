@@ -29,7 +29,7 @@ This project sits at the intersection of Artificial Intelligence, Natural Langua
 
 ### Clone the Repository
 ```
-git clone <your-repository-url>
+git clone https://github.com/19rishabh/ishaara-speech-to-sign-animator.git
 cd ishaara-speech-to-sign-animator
 cd backend
 ```

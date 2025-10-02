@@ -1,18 +1,18 @@
-## ISHAARA - REAL TIME SPEECH TO INDIAN SIGN LANGUAGE CONVERSION USING ANIMATED AVATARS
+## ISHAARA - SPEECH TO INDIAN SIGN LANGUAGE CONVERSION USING ANIMATED AVATARS
 This is a B.Tech final year project that serves as a proof-of-concept for a real-time communication tool designed to bridge the gap between hearing individuals and the Deaf community. The application captures spoken English, transcribes it to text, translates the text into a grammatically appropriate Indian Sign Language (ISL) gloss, and renders the translation as a sequence of animations on a 3D avatar in a web browser.
 This project sits at the intersection of Artificial Intelligence, Natural Language Processing (NLP), and real-time Computer Graphics.
 
 ## Core Features
-- Real-Time Audio Transcription: Captures live audio from the user's microphone and uses a state-of-the-art AI model for accurate speech-to-text conversion.
-- Grammatical ISL Translation: Implements a sophisticated NLP engine to convert English sentence structures into the correct ISL gloss, moving beyond simple word-for-word mapping.
-- 3D Avatar Animation: Renders a 3D avatar in the browser and plays a sequence of sign language animations in real-time.
-- Scalable Architecture: Utilizes a "lazy loading" mechanism for animations, allowing the system's vocabulary to expand to thousands of words without performance degradation.
-- Animation Blending: Employs cross-fading between animations to produce a fluid, natural, and co-articulated motion for the avatar.
+- **Real-Time Audio Transcription**: Captures live audio from the user's microphone and uses a state-of-the-art AI model for accurate speech-to-text conversion.
+- **Grammatical ISL Translation**: Implements a sophisticated NLP engine to convert English sentence structures into the correct ISL gloss, moving beyond simple word-for-word mapping.
+- **3D Avatar Animation**: Renders a 3D avatar in the browser and plays a sequence of sign language animations in real-time.
+- **Scalable Architecture**: Utilizes a "lazy loading" mechanism for animations, allowing the system's vocabulary to expand to thousands of words without performance degradation.
+- **Animation Blending**: Employs cross-fading between animations to produce a fluid, natural, and co-articulated motion for the avatar.
 
 ## Technology Stack
 
 ### Frontend (Client) 
-- HTML5, CSS3, JavaScript (ES6+) - For the user interface and core application logic.
+- HTML5, CSS3, JavaScript- For the user interface and core application logic.
 - Three.js - A powerful 3D graphics library for rendering the avatar and animations.
 
 ### Backend (Server) 

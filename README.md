@@ -1,4 +1,4 @@
-# ISHAARA - REAL TIME SPEECH TO INDIAN SIGN LANGUAGE CONVERSION USING ANIMATED AVATARS
+## ISHAARA - REAL TIME SPEECH TO INDIAN SIGN LANGUAGE CONVERSION USING ANIMATED AVATARS
 This is a B.Tech final year project that serves as a proof-of-concept for a real-time communication tool designed to bridge the gap between hearing individuals and the Deaf community. The application captures spoken English, transcribes it to text, translates the text into a grammatically appropriate Indian Sign Language (ISL) gloss, and renders the translation as a sequence of animations on a 3D avatar in a web browser.
 This project sits at the intersection of Artificial Intelligence, Natural Language Processing (NLP), and real-time Computer Graphics.
 
@@ -28,44 +28,54 @@ This project sits at the intersection of Artificial Intelligence, Natural Langua
 ## Setup and Installation
 
 ### Clone the Repository
+```
 git clone <your-repository-url>
 cd ishaara-speech-to-sign-animator
 cd backend
-
+```
 ### Create a Python virtual environment
+```
 python -m venv ishaaravenv
-
+```
 ### Activate the virtual environment
+```
 On Windows: venv\Scripts\activate
 On macOS/Linux: source venv/bin/activate
-
+```
 ### Install the required Python libraries from requirements.txt
+```
 pip install -r requirements.txt
-
+```
 ### Download the necessary spaCy English language model
+```
 python -m spacy download en_core_web_sm
-
+```
 ## How to Run the Application
 
 ### Terminal 1: Start the Backend Server
 Open a new terminal.
 
 ### Navigate to the backend directory.
+```
 cd backend
+```
 Activate the virtual environment if it's not already active.
 
 ### Run the Flask application:
+```
 flask run
-
+```
 ### Terminal 2: Start the Frontend Server
 Open a second, separate terminal.
 
 ### Navigate to the frontend directory.
+```
 cd frontend
-
+```
 ### Start the simple Python HTTP server:
+```
 python -m http.server
-
+```
 ### Accessing the Application
 Open a modern web browser (like Chrome or Firefox).
 Navigate to the following address: http://localhost:8000

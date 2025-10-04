@@ -34,8 +34,8 @@ if not os.path.exists("temp_audio"):
 # --- REVISED, MORE ACCURATE TRANSLATION LOGIC ---
 def translate_to_isl_gloss(text: str) -> list:
     """
-    Translates an English sentence into an ISL gloss sequence by extracting key content words.
-    This version correctly handles important pronouns and adverbs.
+    Translates an English sentence into an ISL gloss sequence by extracting key content words,
+    handling negation, and mapping synonyms.
     """
     if not nlp:
         return ["Error: spaCy model not loaded."]
@@ -44,8 +44,18 @@ def translate_to_isl_gloss(text: str) -> list:
     
     gloss = []
     
-    # --- FIX: Added "ADV" (adverb) to the list of important parts of speech ---
-    # This will now capture words like "why", "where", "how", "home" etc.
+    # This dictionary maps English lemmas to a primary ISL sign concept.
+    # This is where linguistic exceptions are handled.
+    isl_synonym_map = {
+        "FOOD": "EAT",
+        "HOME": "HOUSE",
+        "MINE": "MY",
+        "MYSELF": "I",
+        "HEY": "HELLO",
+        "HI": "HELLO"
+        # This map can be expanded as more synonyms are identified.
+    }
+    
     important_pos = ["NOUN", "PROPN", "VERB", "ADJ", "INTJ", "PRON", "ADV"]
     
     for token in doc:
@@ -66,8 +76,11 @@ def translate_to_isl_gloss(text: str) -> list:
     if not gloss:
         return [word.text.upper() for word in doc if not word.is_punct]
 
-    # spaCy lemmatizes 'my' to 'I', which is what we want for the sign animation.
-    return gloss
+    # --- NEW: Apply the synonym map to the generated gloss ---
+    # This step ensures that words like 'FOOD' are mapped to 'EAT' before being sent.
+    final_gloss = [isl_synonym_map.get(word, word) for word in gloss]
+
+    return final_gloss
 
 # --- API ENDPOINTS ---
 @app.route('/transcribe', methods=['POST'])

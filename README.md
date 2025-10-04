@@ -11,17 +11,12 @@ This project sits at the intersection of Artificial Intelligence, Natural Langua
 
 ## Technology Stack
 
-### Frontend (Client) 
 - HTML5, CSS3, JavaScript- For the user interface and core application logic.
 - Three.js - A powerful 3D graphics library for rendering the avatar and animations.
-
-### Backend (Server) 
 - Python 3 - The core language for all AI and server-side logic
 - Flask - A lightweight web framework to create the API endpoint.
 - spaCy - An advanced NLP library for grammatical parsing and translation logic.
 - faster-whisper - An efficient implementation of OpenAI's Whisper model for speech-to-text.
-
-### 3D Asset Pipeline 
 - Ready Player Me - For generating high-quality, standardized 3D avatars.
 - Blender - For creating all custom ISL sign animations.
 
@@ -33,12 +28,9 @@ git clone https://github.com/19rishabh/ishaara-speech-to-sign-animator.git
 cd ishaara-speech-to-sign-animator
 cd backend
 ```
-### Create a Python virtual environment
+### Create a Python virtual environment and activate it
 ```
 python -m venv ishaaravenv
-```
-### Activate the virtual environment
-```
 On Windows: venv\Scripts\activate
 On macOS/Linux: source venv/bin/activate
 ```

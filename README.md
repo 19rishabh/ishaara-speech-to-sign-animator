@@ -28,12 +28,9 @@ git clone https://github.com/19rishabh/ishaara-speech-to-sign-animator.git
 cd ishaara-speech-to-sign-animator
 cd backend
 ```
-### Create a Python virtual environment
+### Create a Python virtual environment and activate it
 ```
 python -m venv ishaaravenv
-```
-### Activate the virtual environment
-```
 On Windows: venv\Scripts\activate
 On macOS/Linux: source venv/bin/activate
 ```

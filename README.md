@@ -31,8 +31,8 @@ cd backend
 ### Create a Python virtual environment and activate it
 ```
 python -m venv ishaaravenv
-On Windows: venv\Scripts\activate
-On macOS/Linux: source venv/bin/activate
+On Windows: ishaaravenv\Scripts\activate
+On macOS/Linux: source ishaaravenv/bin/activate
 ```
 ### Install the required Python libraries from requirements.txt
 ```

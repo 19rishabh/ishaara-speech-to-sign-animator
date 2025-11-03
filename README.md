@@ -46,13 +46,14 @@ python -m spacy download en_core_web_sm
 
 ### Terminal 1: Start the Backend Server
 Open a new terminal.
-
+###  Activate the virtual environment if it's not already active.
+```
+.\ishaaravenv\Scripts\activate
+```
 ### Navigate to the backend directory.
 ```
 cd backend
 ```
-Activate the virtual environment if it's not already active.
-
 ### Run the Flask application:
 ```
 flask run

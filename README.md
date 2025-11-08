@@ -31,8 +31,8 @@ cd backend
 ### Create a Python virtual environment and activate it
 ```
 python -m venv ishaaravenv
-On Windows: venv\Scripts\activate
-On macOS/Linux: source venv/bin/activate
+On Windows: ishaaravenv\Scripts\activate
+On macOS/Linux: source ishaaravenv/bin/activate
 ```
 ### Install the required Python libraries from requirements.txt
 ```
@@ -46,13 +46,14 @@ python -m spacy download en_core_web_sm
 
 ### Terminal 1: Start the Backend Server
 Open a new terminal.
-
+###  Activate the virtual environment if it's not already active.
+```
+.\ishaaravenv\Scripts\activate
+```
 ### Navigate to the backend directory.
 ```
 cd backend
 ```
-Activate the virtual environment if it's not already active.
-
 ### Run the Flask application:
 ```
 flask run

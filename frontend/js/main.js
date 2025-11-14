@@ -2,9 +2,9 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
-let scene, camera, renderer, model, mixer, clock;
-const animationActions = {}; // Our cache for loaded animations
-let currentAction = null; // Keep track of the currently playing action
+let scene, camera, renderer, model, mixer, clock, controls;
+const animationActions = {}; 
+let currentAction = null; 
 let animationQueue = [];
 let isPlayingAnimation = false;
 
@@ -15,66 +15,104 @@ let isRecording = false;
 
 // --- DOM ELEMENTS ---
 const statusElement = document.getElementById('status');
-const transcriptionElement = document.getElementById('transcription');
+const textInput = document.getElementById('text-input'); // MODIFIED
 const micBtn = document.getElementById('mic-btn');
+const micBtnText = document.getElementById('mic-btn-text'); // NEW
+const translateBtn = document.getElementById('translate-btn'); // NEW
+const canvasContainer = document.getElementById('canvas-container');
 
 init();
 
 function init() {
     // --- Basic Scene Setup ---
     scene = new THREE.Scene();
-    scene.background = new THREE.Color(0xeeeeee);
+    scene.background = new THREE.Color(0xf0f4f8); 
+    scene.fog = new THREE.Fog(0xf0f4f8, 10, 25); 
     clock = new THREE.Clock();
-    camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-    camera.position.set(0, 1.5, 3);
+    camera = new THREE.PerspectiveCamera(75, canvasContainer.clientWidth / canvasContainer.clientHeight, 0.1, 1000);
+    camera.position.set(0, 1.5, 2);
+    
     renderer = new THREE.WebGLRenderer({ antialias: true });
-    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setSize(canvasContainer.clientWidth, canvasContainer.clientHeight);
     renderer.setPixelRatio(window.devicePixelRatio);
-    document.body.appendChild(renderer.domElement);
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+    canvasContainer.appendChild(renderer.domElement); 
+
+    // --- Enhanced Lighting ---
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.7); 
     scene.add(ambientLight);
-    const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
+    const directionalLight = new THREE.DirectionalLight(0xffffff, 1.2);
     directionalLight.position.set(5, 10, 7.5);
     scene.add(directionalLight);
-    const controls = new OrbitControls(camera, renderer.domElement);
-    controls.target.set(0, 1, 0);
+    const hemiLight = new THREE.HemisphereLight( 0xffffff, 0x444444, 0.6 );
+    hemiLight.position.set( 0, 20, 0 );
+    scene.add( hemiLight );
+
+    // --- Add Floor Grid ---
+    const gridHelper = new THREE.GridHelper(10, 10, 0xcccccc, 0xcccccc);
+    scene.add(gridHelper);
+    
+    // --- Add OrbitControls for camera interaction ---
+    controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true; 
+    controls.dampingFactor = 0.05;
+    controls.screenSpacePanning = false;
+    controls.minDistance = 1.5; 
+    controls.maxDistance = 10; 
+    controls.target.set(0, 1.2, 0); 
     controls.update();
 
     // --- Load Main Avatar ---
     const loader = new GLTFLoader();
-    loader.load('assets/avatar.glb', (gltf) => {
+    loader.load('assets/avatar.glb', (gltf) => { 
         model = gltf.scene;
         scene.add(model);
         mixer = new THREE.AnimationMixer(model);
-        statusElement.textContent = "Click the microphone to start speaking.";
-    }, undefined, (error) => {
-        console.error("Error loading main avatar:", error);
-        statusElement.textContent = "Error: Could not load the main avatar model.";
+        statusElement.textContent = "Ready.";
+    }, 
+    undefined, 
+    (error) => {
+        console.error("CRITICAL: FAILED TO LOAD AVATAR MODEL.", error);
+        statusElement.textContent = "Error: Avatar model not found in /assets/avatar_base.glb";
+        statusElement.classList.add('text-red-500', 'font-bold');
+        micBtn.disabled = true;
+        translateBtn.disabled = true;
     });
 
     // --- Event Listeners ---
     window.addEventListener('resize', onWindowResize);
     micBtn.addEventListener('click', toggleRecording);
+    translateBtn.addEventListener('click', sendTextToTranslate); // NEW
+    
+    // NEW: Enable/disable translate button based on text input
+    textInput.addEventListener('input', () => {
+        translateBtn.disabled = textInput.value.trim() === '';
+    });
+    translateBtn.disabled = true; // Disabled by default
 
     animate();
 }
 
 function onWindowResize() {
-    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.aspect = canvasContainer.clientWidth / canvasContainer.clientHeight;
     camera.updateProjectionMatrix();
-    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setSize(canvasContainer.clientWidth, canvasContainer.clientHeight);
 }
 
 function animate() {
     requestAnimationFrame(animate);
     const delta = clock.getDelta();
     if (mixer) mixer.update(delta);
+    if (controls) controls.update();
     renderer.render(scene, camera);
 }
 
 // --- On-Demand Animation Loader ---
 function getAnimationAction(name) {
     return new Promise((resolve, reject) => {
+        if (!mixer) {
+            reject("Mixer not initialized. Cannot load animation.");
+            return;
+        }
         if (animationActions[name]) {
             resolve(animationActions[name]);
             return;
@@ -95,28 +133,37 @@ function getAnimationAction(name) {
     });
 }
 
-// --- Audio Recording and Processing Logic ---
+// --- MODIFIED: Audio Recording Logic ---
 async function toggleRecording() {
     if (isPlayingAnimation) return;
     if (isRecording) {
+        // --- STOP RECORDING ---
         mediaRecorder.stop();
         isRecording = false;
-        micBtn.textContent = "Speak";
-        micBtn.classList.remove('recording');
-        statusElement.textContent = "Processing audio...";
+        
+        micBtn.classList.remove('recording', 'bg-red-500', 'hover:bg-red-600');
+        micBtn.classList.add('bg-green-500', 'hover:bg-green-600');
+        micBtnText.textContent = "Record";
+        statusElement.textContent = "Transcribing audio...";
+        translateBtn.disabled = true;
     } else {
+        // --- START RECORDING ---
         try {
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
             mediaRecorder = new MediaRecorder(stream);
             audioChunks = [];
             mediaRecorder.ondataavailable = event => audioChunks.push(event.data);
-            mediaRecorder.onstop = sendAudioToServer;
+            mediaRecorder.onstop = sendAudioToServer; // This function is now different
+            
             mediaRecorder.start();
             isRecording = true;
-            micBtn.textContent = "Stop";
-            micBtn.classList.add('recording');
+            
+            micBtn.classList.remove('bg-green-500', 'hover:bg-green-600');
+            micBtn.classList.add('recording', 'bg-red-500', 'hover:bg-red-600');
+            micBtnText.textContent = "Stop";
             statusElement.textContent = "Listening...";
-            transcriptionElement.innerHTML = "&nbsp;";
+            textInput.value = ""; // Clear text input
+            translateBtn.disabled = true;
         } catch (err) {
             console.error("Error accessing microphone:", err);
             statusElement.textContent = "Could not access microphone.";
@@ -124,6 +171,7 @@ async function toggleRecording() {
     }
 }
 
+// --- MODIFIED: This function now ONLY transcribes and populates the text area ---
 async function sendAudioToServer() {
     const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
     const formData = new FormData();
@@ -131,23 +179,65 @@ async function sendAudioToServer() {
     try {
         const response = await fetch('http://127.0.0.1:5000/transcribe', { method: 'POST', body: formData });
         if (!response.ok) throw new Error(`Server error: ${response.statusText}`);
+        
         const data = await response.json();
-        transcriptionElement.textContent = `You said: "${data.transcribed_text}"`;
+        
+        // Populate the text area with the transcribed text
+        textInput.value = data.transcribed_text || ""; 
+        statusElement.textContent = "Transcription complete. Edit or click 'Translate'.";
+        
+        // Enable the translate button
+        translateBtn.disabled = textInput.value.trim() === '';
+
+    } catch (error) {
+        console.error('Transcription failed:', error);
+        statusElement.textContent = "Failed to transcribe audio.";
+        translateBtn.disabled = true;
+    }
+}
+
+// --- NEW: This function handles the translation and animation ---
+async function sendTextToTranslate() {
+    if (isPlayingAnimation) return;
+    
+    const text = textInput.value;
+    if (!text.trim()) {
+        statusElement.textContent = "Nothing to translate.";
+        return;
+    }
+
+    statusElement.textContent = "Translating text...";
+    translateBtn.disabled = true;
+    micBtn.disabled = true;
+
+    try {
+        const response = await fetch('http://127.0.0.1:5000/translate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text: text })
+        });
+        
+        if (!response.ok) throw new Error(`Server error: ${response.statusText}`);
+
+        const data = await response.json();
+        
         if (data.gloss && data.gloss.length > 0) {
             playAnimationSequence(data.gloss);
         } else {
-            statusElement.textContent = "Could not translate the speech. Try again.";
+            statusElement.textContent = "Could not translate the text.";
+            translateBtn.disabled = false;
+            micBtn.disabled = false;
         }
     } catch (error) {
-        console.error('Transcription/Translation failed:', error);
-        statusElement.textContent = "Failed to process audio.";
+        console.error('Translation failed:', error);
+        statusElement.textContent = "Failed to translate text.";
+        translateBtn.disabled = false;
+        micBtn.disabled = false;
     }
 }
 
 // --- UPGRADED: Scalable Animation Sequencer with Blending ---
 async function playAnimationSequence(sequence) {
-    if (isPlayingAnimation) return;
-
     statusElement.textContent = "Loading required signs...";
     console.log("Received sequence:", sequence);
 
@@ -168,24 +258,32 @@ async function playAnimationSequence(sequence) {
         isPlayingAnimation = true;
         playNextAnimationInQueue();
     } else {
-        statusElement.textContent = "None of the required signs could be animated. Try again.";
+        statusElement.textContent = "Signs translated, but no animations found. Try 'hello'.";
+        translateBtn.disabled = false;
+        micBtn.disabled = false;
     }
 }
 
 function playNextAnimationInQueue() {
     if (animationQueue.length === 0) {
         console.log("Animation queue finished.");
-        // Fade out the last action to return to the rest pose
         if(currentAction) {
             const lastAction = currentAction;
-            currentAction = null; // Clear current action
-            // A short fade out to blend back to the base pose
-            setTimeout(() => {
-                lastAction.fadeOut(0.5);
-            }, (lastAction.getClip().duration - 0.5) * 1000);
+            currentAction = null; 
+            const fadeOutTime = 0.5; 
+            const clipDuration = lastAction.getClip().duration;
+            const waitTime = (clipDuration - fadeOutTime) * 1000;
+            
+            if (waitTime > 0) {
+                 setTimeout(() => { lastAction.fadeOut(fadeOutTime); }, waitTime);
+            } else {
+                lastAction.fadeOut(0.1); 
+            }
         }
         isPlayingAnimation = false;
-        statusElement.textContent = "Sequence finished. Click the microphone to speak again.";
+        statusElement.textContent = "Sequence finished. Ready.";
+        translateBtn.disabled = false;
+        micBtn.disabled = false;
         return;
     }
 
@@ -194,7 +292,6 @@ function playNextAnimationInQueue() {
     
     console.log(`Playing: ${nextAnimationName}`);
 
-    // If there is no current action, just play the first one
     if (!currentAction) {
         currentAction = nextAction;
         currentAction.reset().play();
@@ -202,14 +299,12 @@ function playNextAnimationInQueue() {
         const previousAction = currentAction;
         currentAction = nextAction;
         
-        // Blend from the previous action to the new one
-        previousAction.crossFadeTo(currentAction.reset(), 0.25, true);
+        const blendDuration = 0.25; 
+        previousAction.crossFadeTo(currentAction.reset(), blendDuration, true);
         currentAction.play();
     }
 
-    // Use a deterministic timeout to trigger the next animation
-    // instead of the 'finished' event listener.
     const animationDuration = currentAction.getClip().duration;
-    setTimeout(playNextAnimationInQueue, animationDuration * 1000);
+    const nextTriggerTime = (animationDuration - 0.25) * 1000;
+    setTimeout(playNextAnimationInQueue, nextTriggerTime > 0 ? nextTriggerTime : animationDuration * 1000);
 }
-

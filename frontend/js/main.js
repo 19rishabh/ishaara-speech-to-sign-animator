@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
-let scene, camera, renderer, model, mixer, clock, controls;
+let scene, camera, renderer, model, mixer, clock, controls, gridHelper; // NEW: gridHelper is now global
 const animationActions = {}; 
 let currentAction = null; 
 let animationQueue = [];
@@ -15,19 +15,35 @@ let isRecording = false;
 
 // --- DOM ELEMENTS ---
 const statusElement = document.getElementById('status');
-const textInput = document.getElementById('text-input'); // MODIFIED
+const textInput = document.getElementById('text-input'); 
 const micBtn = document.getElementById('mic-btn');
-const micBtnText = document.getElementById('mic-btn-text'); // NEW
-const translateBtn = document.getElementById('translate-btn'); // NEW
+const micBtnText = document.getElementById('mic-btn-text'); 
+const translateBtn = document.getElementById('translate-btn'); 
 const canvasContainer = document.getElementById('canvas-container');
+// --- NEW: Theme Toggle Elements ---
+const themeToggleBtn = document.getElementById('theme-toggle');
+const sunIcon = document.getElementById('sun-icon');
+const moonIcon = document.getElementById('moon-icon');
+
+// --- NEW: Theme Colors ---
+const lightTheme = {
+    bg: 0xf0f4f8,
+    grid: 0xcccccc,
+    fog: 0xf0f4f8
+};
+const darkTheme = {
+    bg: 0x18181b, // zinc-900
+    grid: 0x3f3f46, // zinc-700
+    fog: 0x18181b
+};
 
 init();
 
 function init() {
     // --- Basic Scene Setup ---
     scene = new THREE.Scene();
-    scene.background = new THREE.Color(0xf0f4f8); 
-    scene.fog = new THREE.Fog(0xf0f4f8, 10, 25); 
+    scene.background = new THREE.Color(lightTheme.bg); 
+    scene.fog = new THREE.Fog(lightTheme.fog, 10, 25); 
     clock = new THREE.Clock();
     camera = new THREE.PerspectiveCamera(75, canvasContainer.clientWidth / canvasContainer.clientHeight, 0.1, 1000);
     camera.position.set(0, 1.5, 2);
@@ -48,7 +64,7 @@ function init() {
     scene.add( hemiLight );
 
     // --- Add Floor Grid ---
-    const gridHelper = new THREE.GridHelper(10, 10, 0xcccccc, 0xcccccc);
+    gridHelper = new THREE.GridHelper(10, 10, lightTheme.grid, lightTheme.grid); // Use theme color
     scene.add(gridHelper);
     
     // --- Add OrbitControls for camera interaction ---
@@ -72,7 +88,7 @@ function init() {
     undefined, 
     (error) => {
         console.error("CRITICAL: FAILED TO LOAD AVATAR MODEL.", error);
-        statusElement.textContent = "Error: Avatar model not found in /assets/avatar_base.glb";
+        statusElement.textContent = "Error: Avatar model not found in /assets/avatar.glb";
         statusElement.classList.add('text-red-500', 'font-bold');
         micBtn.disabled = true;
         translateBtn.disabled = true;
@@ -81,16 +97,59 @@ function init() {
     // --- Event Listeners ---
     window.addEventListener('resize', onWindowResize);
     micBtn.addEventListener('click', toggleRecording);
-    translateBtn.addEventListener('click', sendTextToTranslate); // NEW
+    translateBtn.addEventListener('click', sendTextToTranslate);
     
-    // NEW: Enable/disable translate button based on text input
+    // --- NEW: Theme Toggle Listener ---
+    themeToggleBtn.addEventListener('click', toggleTheme);
+    
+    // --- NEW: Enable/disable translate button based on text input ---
     textInput.addEventListener('input', () => {
         translateBtn.disabled = textInput.value.trim() === '';
     });
     translateBtn.disabled = true; // Disabled by default
 
+    // --- NEW: Set initial theme on load ---
+    const currentTheme = localStorage.theme || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+    setTheme(currentTheme);
+
     animate();
 }
+
+// --- NEW: Theme Control Functions ---
+function setTheme(mode) {
+    if (mode === 'dark') {
+        document.documentElement.classList.add('dark');
+        localStorage.theme = 'dark';
+        sunIcon.classList.add('hidden');
+        moonIcon.classList.remove('hidden');
+        
+        // Update 3D scene colors
+        if (scene) {
+            scene.background.set(darkTheme.bg);
+            scene.fog.color.set(darkTheme.fog);
+            gridHelper.material.color.set(darkTheme.grid);
+        }
+    } else {
+        document.documentElement.classList.remove('dark');
+        localStorage.theme = 'light';
+        sunIcon.classList.remove('hidden');
+        moonIcon.classList.add('hidden');
+        
+        // Update 3D scene colors
+        if (scene) {
+            scene.background.set(lightTheme.bg);
+            scene.fog.color.set(lightTheme.fog);
+            gridHelper.material.color.set(lightTheme.grid);
+        }
+    }
+}
+
+function toggleTheme() {
+    const currentMode = document.documentElement.classList.contains('dark') ? 'dark' : 'light';
+    const newMode = currentMode === 'dark' ? 'light' : 'dark';
+    setTheme(newMode);
+}
+// --- End of Theme Control Functions ---
 
 function onWindowResize() {
     camera.aspect = canvasContainer.clientWidth / canvasContainer.clientHeight;

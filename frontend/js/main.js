@@ -166,6 +166,8 @@ function animate() {
 }
 
 // --- On-Demand Animation Loader ---
+// Resolves with the key under which the loaded action is cached in animationActions,
+// so callers (the animation queue) don't need to hold onto the action objects directly.
 function getAnimationAction(name) {
     return new Promise((resolve, reject) => {
         if (!mixer) {
@@ -173,7 +175,7 @@ function getAnimationAction(name) {
             return;
         }
         if (animationActions[name]) {
-            resolve(animationActions[name]);
+            resolve(name);
             return;
         }
         const path = `assets/${name.toUpperCase()}.glb`;
@@ -184,11 +186,43 @@ function getAnimationAction(name) {
                 action.setLoop(THREE.LoopOnce);
                 action.clampWhenFinished = true;
                 animationActions[name] = action;
-                resolve(action);
+                resolve(name);
             } else {
                 reject(`No animation found in ${path}`);
             }
         }, undefined, () => reject(`Failed to load animation: ${name}`));
+    });
+}
+
+// --- Fingerspelling Fallback Loader ---
+// Used for out-of-vocabulary gloss words (e.g. proper names) that have no whole-word
+// sign. Loads per-letter handshape clips from assets/fingerspell/. Cached under an
+// "FS_" prefix so a letter like "I" never collides with the whole-word sign "I.glb".
+function getFingerspellAction(letter) {
+    return new Promise((resolve, reject) => {
+        if (!mixer) {
+            reject("Mixer not initialized. Cannot load animation.");
+            return;
+        }
+        const upperLetter = letter.toUpperCase();
+        const key = `FS_${upperLetter}`;
+        if (animationActions[key]) {
+            resolve(key);
+            return;
+        }
+        const path = `assets/fingerspell/${upperLetter}.glb`;
+        const loader = new GLTFLoader();
+        loader.load(path, (gltf) => {
+            if (gltf.animations && gltf.animations.length) {
+                const action = mixer.clipAction(gltf.animations[0]);
+                action.setLoop(THREE.LoopOnce);
+                action.clampWhenFinished = true;
+                animationActions[key] = action;
+                resolve(key);
+            } else {
+                reject(`No fingerspelling animation found in ${path}`);
+            }
+        }, undefined, () => reject(`Failed to load fingerspelling animation: ${letter}`));
     });
 }
 
@@ -295,22 +329,49 @@ async function sendTextToTranslate() {
     }
 }
 
-// --- UPGRADED: Scalable Animation Sequencer with Blending ---
+// --- UPGRADED: Scalable Animation Sequencer with Blending + Fingerspelling Fallback ---
 async function playAnimationSequence(sequence) {
     statusElement.textContent = "Loading required signs...";
     console.log("Received sequence:", sequence);
 
-    const loadingPromises = sequence.map(name => getAnimationAction(name).catch(e => null));
+    const loadingPromises = sequence.map(name => getAnimationAction(name).catch(() => null));
     const results = await Promise.allSettled(loadingPromises);
-    
+
     animationQueue = [];
-    results.forEach((result, index) => {
+    for (let i = 0; i < results.length; i++) {
+        const result = results[i];
+        const word = sequence[i];
+
         if (result.status === 'fulfilled' && result.value) {
-            animationQueue.push(sequence[index]);
-        } else {
-            console.warn(`Animation for "${sequence[index]}" failed to load or does not exist. Skipping.`);
+            animationQueue.push(result.value);
+            continue;
         }
-    });
+
+        // No whole-word sign for this gloss token - try fingerspelling it letter by letter.
+        const letters = word.replace(/[^A-Za-z]/g, '').split('');
+        if (letters.length === 0) {
+            console.warn(`Animation for "${word}" failed to load or does not exist. Skipping.`);
+            continue;
+        }
+
+        const letterKeys = [];
+        let allLettersLoaded = true;
+        for (const letter of letters) {
+            try {
+                letterKeys.push(await getFingerspellAction(letter));
+            } catch (e) {
+                allLettersLoaded = false;
+                break;
+            }
+        }
+
+        if (allLettersLoaded) {
+            console.warn(`No whole-word sign for "${word}" - using fingerspelling fallback.`);
+            animationQueue.push(...letterKeys);
+        } else {
+            console.warn(`No sign or fingerspelling available for "${word}". Skipping.`);
+        }
+    }
 
     if (animationQueue.length > 0) {
         statusElement.textContent = `Playing sequence: ${animationQueue.join(' -> ')}`;

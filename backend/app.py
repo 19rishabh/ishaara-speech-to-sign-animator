@@ -36,93 +36,181 @@ def translate_to_isl_gloss(text: str) -> list:
         return ["Error: nlp model not loaded"]
         
     doc = nlp(text.strip().lower())
-    
+
     buckets = {
-        "TIME": [], "PLACE": [], "SUBJECT": [], "OBJECT": [], "VERB": [],
+        "TIME": [], "PLACE": [], "SUBJECT": [], "OBJECT": [], "VERB": [], "MODAL": [],
         "NEGATION": [], "WH_QUESTION": [], "UNCLASSIFIED": []
     }
-    
+
     isl_synonym_map = {
         "HOME": "HOUSE", "MINE": "MY", "MYSELF": "I",
         "ME": "I", "HEY": "HELLO", "HI": "HELLO", "SEE": "LOOK"
     }
 
-    noun_map = {}
+    # token.i -> bucket name, but only for tokens that got a "head" slot of their own
+    # (subjects, objects, verbs, time/place words, modals). Populated in Pass 1 and
+    # read back in Pass 2 to attach modifiers to their head regardless of word order.
+    token_slot = {}
+    # Modifiers deferred to Pass 2: (token, 'before' | 'after') relative to their head.
+    modifiers = []
 
-    # --- 2. Linguistic Triage: Sort tokens into buckets (General Rules) ---
+    # --- Pass 1: place every head word first ---
+    # Adjectives, compounds, possessives, and coordinated conjuncts all attach to
+    # another token (their dependency head). In English (and typically in the
+    # gloss for these categories) premodifiers like compounds/possessives/numerals
+    # precede their head, so if we tried to attach them in a single left-to-right
+    # pass, the head wouldn't have a bucket yet. Splitting into two passes means
+    # every possible head is already placed before we resolve any modifier.
     for token in doc:
         lemma = token.lemma_.upper()
 
-        if token.pos_ == 'DET' or token.lemma_ == 'be' or token.pos_ == 'AUX':
-            continue
-            
-        if token.dep_ == 'neg' or token.text == 'dont':
-            buckets["NEGATION"].append("NOT")
-            continue
-            
+        # WH-words must be checked before the determiner skip below: "which" is
+        # tagged both WDT and DET, and would otherwise be silently discarded as
+        # a plain determiner before ever reaching the WH-question bucket.
         if token.tag_ in ['WDT', 'WP', 'WP$', 'WRB']:
             buckets["WH_QUESTION"].append(lemma)
             continue
-            
-        if token.ent_type_ == 'TIME' or token.lemma_ in ['tomorrow', 'yesterday', 'now', 'today']:
-            buckets["TIME"].append(lemma)
+
+        # Negative-polarity words carry inherent negation even with no separate
+        # "not"/"n't" token ("no money", "nothing", "nobody"). Only "no" used as
+        # a determiner counts here - "no" as a standalone discourse interjection
+        # ("no, I don't want it") is a separate response particle, not a negator
+        # of its own clause, and would double up with a genuine "don't" elsewhere
+        # in the same sentence. Negative pronouns (nobody/nothing/none/neither)
+        # still carry their own lexical content, so they aren't skipped - they
+        # fall through to normal placement below in addition to marking negation.
+        if (token.lemma_ == 'no' and token.pos_ == 'DET') or token.lemma_ in ('nobody', 'nothing', 'none', 'neither'):
+            buckets["NEGATION"].append("NOT")
+            if token.pos_ == 'DET':
+                continue
+
+        # Expletive subjects ("there is...", "it seems...") are grammatical
+        # placeholders with no sign-worthy content of their own.
+        if token.dep_ == 'expl':
             continue
-            
+
+        if token.pos_ == 'DET' or token.lemma_ == 'be':
+            continue
+
+        if token.tag_ == 'MD':
+            buckets["MODAL"].append(lemma)
+            token_slot[token.i] = "MODAL"
+            continue
+
+        if token.pos_ == 'AUX':
+            continue
+
+        if token.dep_ == 'neg':
+            buckets["NEGATION"].append("NOT")
+            continue
+
+        if token.ent_type_ in ['TIME', 'DATE'] or token.lemma_ in ['tomorrow', 'yesterday', 'now', 'today']:
+            buckets["TIME"].append(lemma)
+            token_slot[token.i] = "TIME"
+            continue
+
         if token.lemma_ == 'home' or token.ent_type_ in ['GPE', 'LOC']:
             buckets["PLACE"].append(lemma)
+            token_slot[token.i] = "PLACE"
             continue
-            
+
+        # Adjectives (post-head in ISL) and pre-nominal modifiers (compounds,
+        # possessives, numerals) and coordinated conjuncts all resolve in Pass 2.
+        if token.pos_ == 'ADJ':
+            modifiers.append((token, 'after'))
+            continue
+
+        if token.dep_ in ('compound', 'poss', 'nummod'):
+            modifiers.append((token, 'before'))
+            continue
+
+        # Coordinated verbs ("eat and drink") are a second predicate, not a
+        # modifier of whatever noun their head happens to be attached to -
+        # route them straight to VERB like any other verb. Only non-verb
+        # conjuncts (coordinated nouns/adjectives) get deferred to Pass 2.
+        if token.dep_ == 'conj' and token.pos_ != 'VERB':
+            modifiers.append((token, 'after'))
+            continue
+
         if 'nsubj' in token.dep_:
             buckets["SUBJECT"].append(lemma)
-            noun_map[token.i] = (lemma, "SUBJECT") 
+            token_slot[token.i] = "SUBJECT"
             continue
-            
-        if 'dobj' in token.dep_ or 'pobj' in token.dep_:
+
+        # dobj/pobj: direct/prepositional objects. attr: predicate nominative
+        # ("she is a doctor"). dative: indirect object ("give me the book").
+        # oprd: object predicate ("call me Bob"). All fill the same OBJECT-like slot.
+        if token.dep_ in ('dobj', 'pobj', 'attr', 'dative', 'oprd'):
             buckets["OBJECT"].append(lemma)
-            noun_map[token.i] = (lemma, "OBJECT") 
+            token_slot[token.i] = "OBJECT"
             continue
 
         if token.pos_ == 'VERB':
             buckets["VERB"].append(lemma)
+            token_slot[token.i] = "VERB"
             continue
-            
-        if token.pos_ == 'ADJ':
-            if token.head.i in noun_map:
-                head_noun, bucket_name = noun_map[token.head.i]
-                try:
-                    noun_index = buckets[bucket_name].index(head_noun)
-                    buckets[bucket_name].insert(noun_index + 1, lemma)
-                except ValueError:
-                     buckets[bucket_name].append(lemma) 
-            else:
-                buckets["UNCLASSIFIED"].append(lemma) 
-            continue
-            
+
         if token.pos_ == 'ADV' and token.lemma_ in ['very', 'too', 'really', 'extremely', 'so']:
-            continue 
-            
-        if token.pos_ == 'ADV':
-            buckets["VERB"].append(lemma) 
             continue
-            
+
+        if token.pos_ == 'ADV':
+            buckets["VERB"].append(lemma)
+            continue
+
         if token.pos_ in ['NOUN', 'PROPN', 'INTJ', 'PRON']:
             buckets["UNCLASSIFIED"].append(lemma)
-            if token.pos_ in ['NOUN', 'PROPN']:
-                 noun_map[token.i] = (lemma, "UNCLASSIFIED")
+            token_slot[token.i] = "UNCLASSIFIED"
             continue
-    
+
+    # --- Pass 2: attach modifiers to their (now-placed) head ---
+    # A modifier's head can itself be another unresolved modifier (e.g. a possessive
+    # on the second half of a coordinated pair: "my brother and my sister" - the
+    # second "my" attaches to "sister", which is itself a deferred conjunct). Resolve
+    # in dependency order via a worklist instead of raw sentence order, repeating
+    # rounds until nothing more can be placed.
+    remaining = modifiers
+    made_progress = True
+    while remaining and made_progress:
+        made_progress = False
+        still_remaining = []
+        for token, placement in remaining:
+            head_bucket = token_slot.get(token.head.i)
+            if head_bucket is None:
+                still_remaining.append((token, placement))
+                continue
+
+            lemma = token.lemma_.upper()
+            head_lemma = token.head.lemma_.upper()
+            try:
+                head_index = buckets[head_bucket].index(head_lemma)
+                insert_at = head_index + 1 if placement == 'after' else head_index
+                buckets[head_bucket].insert(insert_at, lemma)
+            except ValueError:
+                buckets[head_bucket].append(lemma)
+            token_slot[token.i] = head_bucket
+            made_progress = True
+        remaining = still_remaining
+
+    # Anything left has a head that never got a bucket (e.g. an adjective on a
+    # copula that was dropped entirely) - fall back to a plain append.
+    for token, placement in remaining:
+        lemma = token.lemma_.upper()
+        buckets["UNCLASSIFIED"].append(lemma)
+        token_slot[token.i] = "UNCLASSIFIED"
+
     # --- 3. Apply Synonym Map to Buckets ---
     for bucket_name in buckets:
         buckets[bucket_name] = [isl_synonym_map.get(word, word) for word in buckets[bucket_name]]
-            
+
     # --- 4. Syntactic Assembly: Build the final gloss in ISL order ---
     final_gloss = []
     final_gloss.extend(buckets["TIME"])
     final_gloss.extend(buckets["PLACE"])
     final_gloss.extend(buckets["SUBJECT"])
     final_gloss.extend(buckets["OBJECT"])
-    final_gloss.extend(buckets["UNCLASSIFIED"]) 
+    final_gloss.extend(buckets["UNCLASSIFIED"])
     final_gloss.extend(buckets["VERB"])
+    final_gloss.extend(buckets["MODAL"])
     final_gloss.extend(buckets["NEGATION"])
     final_gloss.extend(buckets["WH_QUESTION"])
 

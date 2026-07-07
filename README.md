@@ -4,9 +4,9 @@ This project sits at the intersection of Artificial Intelligence, Natural Langua
 
 ## Core Features
 - **Real-Time Audio Transcription**: Captures live audio from the user's microphone and uses a state-of-the-art AI model for accurate speech-to-text conversion.
-- **Grammatical ISL Translation**: Implements a sophisticated NLP engine to convert English sentence structures into the correct ISL gloss, moving beyond simple word-for-word mapping.
+- **Grammatical ISL Translation**: Implements a custom NLP engine to convert English sentence structures into the correct ISL gloss, moving beyond simple word-for-word mapping.
 - **3D Avatar Animation**: Renders a 3D avatar in the browser and plays a sequence of sign language animations in real-time.
-- **Scalable Architecture**: Utilizes a "lazy loading" mechanism for animations, allowing the system's vocabulary to expand to thousands of words without performance degradation.
+- **Scalable Architecture**: Utilizes lazy loading for animations, allowing the system's vocabulary to expand to thousands of words without performance degradation.
 - **Animation Blending**: Employs cross-fading between animations to produce a fluid, natural, and co-articulated motion for the avatar.
 
 ## Technology Stack

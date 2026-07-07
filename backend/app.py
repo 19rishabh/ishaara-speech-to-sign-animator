@@ -43,7 +43,7 @@ def translate_to_isl_gloss(text: str) -> list:
     }
     
     isl_synonym_map = {
-        "FOOD": "EAT", "HOME": "HOUSE", "MINE": "MY", "MYSELF": "I",
+        "HOME": "HOUSE", "MINE": "MY", "MYSELF": "I",
         "ME": "I", "HEY": "HELLO", "HI": "HELLO", "SEE": "LOOK"
     }
 

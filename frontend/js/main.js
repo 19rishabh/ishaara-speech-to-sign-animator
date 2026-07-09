@@ -242,27 +242,33 @@ async function toggleRecording() {
         translateBtn.disabled = true;
     } else {
         // --- START RECORDING ---
+        let stream;
         try {
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            mediaRecorder = new MediaRecorder(stream);
-            audioChunks = [];
-            mediaRecorder.ondataavailable = event => audioChunks.push(event.data);
-            mediaRecorder.onstop = sendAudioToServer; // This function is now different
-            
-            mediaRecorder.start();
-            isRecording = true;
-            
-            micBtn.classList.remove('bg-green-500', 'hover:bg-green-600');
-            micBtn.classList.add('recording', 'bg-red-500', 'hover:bg-red-600');
-            micBtnText.textContent = "Stop";
-            statusElement.textContent = "Listening...";
-            textInput.value = ""; // Clear text input
-            glossOutput.textContent = " ";
-            translateBtn.disabled = true;
+            stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         } catch (err) {
             console.error("Error accessing microphone:", err);
             statusElement.textContent = "Could not access microphone.";
+            return;
         }
+
+        // Anything after this point is UI/state setup, not microphone access -
+        // keep it outside the getUserMedia try/catch so a bug here can't get
+        // misreported as a permissions error.
+        mediaRecorder = new MediaRecorder(stream);
+        audioChunks = [];
+        mediaRecorder.ondataavailable = event => audioChunks.push(event.data);
+        mediaRecorder.onstop = sendAudioToServer; // This function is now different
+
+        mediaRecorder.start();
+        isRecording = true;
+
+        micBtn.classList.remove('bg-green-500', 'hover:bg-green-600');
+        micBtn.classList.add('recording', 'bg-red-500', 'hover:bg-red-600');
+        micBtnText.textContent = "Stop";
+        statusElement.textContent = "Listening...";
+        textInput.value = ""; // Clear text input
+        if (glossOutput) glossOutput.textContent = " ";
+        translateBtn.disabled = true;
     }
 }
 
@@ -302,7 +308,7 @@ async function sendTextToTranslate() {
     }
 
     statusElement.textContent = "Translating text...";
-    glossOutput.textContent = " ";
+    if (glossOutput) glossOutput.textContent = " ";
     translateBtn.disabled = true;
     micBtn.disabled = true;
 
@@ -321,11 +327,11 @@ async function sendTextToTranslate() {
             // Show the full ISL gloss sequence up front, independent of which
             // signs actually have loadable assets - this is the whole
             // translation, not just what ends up animating.
-            glossOutput.textContent = data.gloss.join(' → ');
+            if (glossOutput) glossOutput.textContent = data.gloss.join(" → ");
             playAnimationSequence(data.gloss);
         } else {
             statusElement.textContent = "Could not translate the text.";
-            glossOutput.textContent = " ";
+            if (glossOutput) glossOutput.textContent = " ";
             translateBtn.disabled = false;
             micBtn.disabled = false;
         }

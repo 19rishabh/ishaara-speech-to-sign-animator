@@ -18,8 +18,9 @@ const statusElement = document.getElementById('status');
 const textInput = document.getElementById('text-input'); 
 const micBtn = document.getElementById('mic-btn');
 const micBtnText = document.getElementById('mic-btn-text'); 
-const translateBtn = document.getElementById('translate-btn'); 
+const translateBtn = document.getElementById('translate-btn');
 const canvasContainer = document.getElementById('canvas-container');
+const glossOutput = document.getElementById('gloss-output');
 // --- NEW: Theme Toggle Elements ---
 const themeToggleBtn = document.getElementById('theme-toggle');
 const sunIcon = document.getElementById('sun-icon');
@@ -256,6 +257,7 @@ async function toggleRecording() {
             micBtnText.textContent = "Stop";
             statusElement.textContent = "Listening...";
             textInput.value = ""; // Clear text input
+            glossOutput.textContent = " ";
             translateBtn.disabled = true;
         } catch (err) {
             console.error("Error accessing microphone:", err);
@@ -300,6 +302,7 @@ async function sendTextToTranslate() {
     }
 
     statusElement.textContent = "Translating text...";
+    glossOutput.textContent = " ";
     translateBtn.disabled = true;
     micBtn.disabled = true;
 
@@ -309,15 +312,20 @@ async function sendTextToTranslate() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ text: text })
         });
-        
+
         if (!response.ok) throw new Error(`Server error: ${response.statusText}`);
 
         const data = await response.json();
-        
+
         if (data.gloss && data.gloss.length > 0) {
+            // Show the full ISL gloss sequence up front, independent of which
+            // signs actually have loadable assets - this is the whole
+            // translation, not just what ends up animating.
+            glossOutput.textContent = data.gloss.join(' → ');
             playAnimationSequence(data.gloss);
         } else {
             statusElement.textContent = "Could not translate the text.";
+            glossOutput.textContent = " ";
             translateBtn.disabled = false;
             micBtn.disabled = false;
         }

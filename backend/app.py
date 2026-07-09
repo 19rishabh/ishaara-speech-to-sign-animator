@@ -25,7 +25,127 @@ except Exception as e:
 
 if not os.path.exists("temp_audio"):
     os.makedirs("temp_audio")
-    
+
+# --- ISL Synonym / Vocabulary-Fallback Map ---
+# Maps English words with no dedicated sign asset onto the closest available
+# sign, so the addressable vocabulary extends past the ~49 hand-authored .glb
+# files without needing a new animation for every near-synonym.
+#
+# IMPORTANT CAVEAT: these mappings are based on common English-language
+# synonymy/common-sense judgment, NOT on a verified Indian Sign Language
+# source. We tried to confirm sign-sharing against ISLRTC, Talking Hands,
+# indiansignlanguage.org, and spreadthesign.com; all were either unreachable,
+# blocked, or video-only content that can't be verified without a human
+# signer. Treat every entry below as an unverified approximation pending
+# review by someone fluent in ISL - a wrong substitution here is actively
+# misleading, not just a vocabulary gap. Entries are grouped by target sign
+# below; each group was screened for two failure modes before inclusion:
+#   1. Cross-POS mismatch - the algorithm buckets a word by its own POS/dependency
+#      role BEFORE this map renames it. A synonym with a different typical POS than
+#      its target (e.g. mapping an adverb onto a target that's normally an
+#      interjection) would carry the *right text* into the *wrong slot* in the
+#      final gloss order. Only same-POS clusters are included.
+#   2. False-equivalence - common "synonyms" that actually carry a different core
+#      meaning in many contexts (e.g. "poor" usually means low-income, not
+#      "bad"; "hand"/"pen" are far more often nouns than the verbs
+#      "give"/"write") were excluded even though they're loosely related words.
+ISL_SYNONYM_MAP = {
+    # --- pronouns / greetings (pre-existing, unchanged) ---
+    "HOME": "HOUSE", 
+    "MINE": "MY", 
+    "MYSELF": "I", 
+    "ME": "I",
+    "HEY": "HELLO", 
+    "HI": "HELLO",
+
+    # --- LOOK (verb) ---
+    "SEE": "LOOK", 
+    "WATCH": "LOOK", 
+    "VIEW": "LOOK", 
+    "GLANCE": "LOOK", 
+    "OBSERVE": "LOOK",
+
+    # --- SPEAK (verb) ---
+    "TALK": "SPEAK", 
+    "SAY": "SPEAK", 
+    "TELL": "SPEAK", 
+    "CHAT": "SPEAK", 
+    "COMMUNICATE": "SPEAK",
+
+    # --- BIG (adjective, size) ---
+    "LARGE": "BIG", 
+    "HUGE": "BIG", 
+    "GIANT": "BIG", 
+    "ENORMOUS": "BIG", 
+    "MASSIVE": "BIG",
+
+    # --- SMALL (adjective, size) ---
+    "LITTLE": "SMALL", 
+    "TINY": "SMALL", 
+    "MINI": "SMALL", 
+    "MINIATURE": "SMALL",
+
+    # --- GOOD (adjective, quality) ---
+    "FINE": "GOOD", 
+    "GREAT": "GOOD", 
+    "WONDERFUL": "GOOD", 
+    "EXCELLENT": "GOOD", 
+    "NICE": "GOOD",
+
+    # --- BAD (adjective, quality) --- ("poor" deliberately excluded: usually means low-income)
+    "TERRIBLE": "BAD", "AWFUL": "BAD", "HORRIBLE": "BAD",
+
+    # --- HAPPY (adjective, emotion) ---
+    "GLAD": "HAPPY", "JOYFUL": "HAPPY", "PLEASED": "HAPPY", "CHEERFUL": "HAPPY", "DELIGHTED": "HAPPY",
+
+    # --- SAD (adjective, emotion) ---
+    "UNHAPPY": "SAD", "UPSET": "SAD", "SORROWFUL": "SAD", "GLOOMY": "SAD",
+
+    # --- COME (verb, motion toward) ---
+    "ARRIVE": "COME", "APPROACH": "COME",
+
+    # --- GIVE (verb) --- ("hand" excluded: far more often a noun)
+    "OFFER": "GIVE", "PROVIDE": "GIVE",
+
+    # --- TAKE (verb) --- ("get"/"hold" excluded: too polysemous / different sense)
+    "GRAB": "TAKE", "FETCH": "TAKE",
+
+    # --- STOP (verb) ---
+    "HALT": "STOP", "CEASE": "STOP", "QUIT": "STOP",
+
+    # --- EAT (verb) ---
+    "CONSUME": "EAT", "DEVOUR": "EAT", "DINE": "EAT",
+
+    # --- WRITE (verb) --- ("pen"/"note" excluded: far more often nouns)
+    "JOT": "WRITE", "SCRIBBLE": "WRITE",
+
+    # --- FRIEND (noun) ---
+    "BUDDY": "FRIEND", "PAL": "FRIEND", "MATE": "FRIEND", "COMPANION": "FRIEND",
+
+    # --- FAMILY (noun) ---
+    "RELATIVES": "FAMILY", "RELATIONS": "FAMILY", "KIN": "FAMILY",
+
+    # --- HOUSE (noun) ---
+    "RESIDENCE": "HOUSE", "DWELLING": "HOUSE",
+
+    # --- MAN / WOMAN (noun) --- ("male"/"female" excluded: too often adjectives)
+    "GUY": "MAN", "GENTLEMAN": "MAN",
+    "LADY": "WOMAN",
+
+    # --- BYE (interjection) ---
+    "GOODBYE": "BYE", "FAREWELL": "BYE",
+
+    # --- THANK (verb) --- ("thanks"/"grateful"/"thankful" excluded: different POS - noun/adjective)
+    "APPRECIATE": "THANK",
+
+    # --- YES (interjection) --- ("ok"/"okay"/"sure" excluded: can mean "acceptable", not agreement)
+    "YEAH": "YES", "YEP": "YES",
+
+    # --- BOOK (noun) --- hypernym fallback: these are all specific *types* of
+    # book, substituted with the generic sign rather than dropped entirely.
+    "NOVEL": "BOOK", "TEXTBOOK": "BOOK", "NOTEBOOK": "BOOK", "MAGAZINE": "BOOK",
+}
+
 # --- AI-Guided Reordering Engine ---
 def translate_to_isl_gloss(text: str) -> list:
     """
@@ -40,11 +160,6 @@ def translate_to_isl_gloss(text: str) -> list:
     buckets = {
         "TIME": [], "PLACE": [], "SUBJECT": [], "OBJECT": [], "VERB": [], "MODAL": [],
         "NEGATION": [], "WH_QUESTION": [], "UNCLASSIFIED": []
-    }
-
-    isl_synonym_map = {
-        "HOME": "HOUSE", "MINE": "MY", "MYSELF": "I",
-        "ME": "I", "HEY": "HELLO", "HI": "HELLO", "SEE": "LOOK"
     }
 
     # token.i -> bucket name, but only for tokens that got a "head" slot of their own
@@ -200,7 +315,7 @@ def translate_to_isl_gloss(text: str) -> list:
 
     # --- 3. Apply Synonym Map to Buckets ---
     for bucket_name in buckets:
-        buckets[bucket_name] = [isl_synonym_map.get(word, word) for word in buckets[bucket_name]]
+        buckets[bucket_name] = [ISL_SYNONYM_MAP.get(word, word) for word in buckets[bucket_name]]
 
     # --- 4. Syntactic Assembly: Build the final gloss in ISL order ---
     final_gloss = []
